@@ -6,6 +6,14 @@ import (
 	"os"
 )
 
+func ReadinessEndpoint(h http.ResponseWriter, req *http.Request) {
+	h.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	h.WriteHeader(http.StatusOK)
+
+	h.Write([]byte("OK"))
+
+}
+
 func main() {
 	mux := http.NewServeMux()
 	server := http.Server{
@@ -13,8 +21,9 @@ func main() {
 		Handler: mux,
 	}
 
-	staticPath := http.Dir(".")
-	mux.Handle("/", http.FileServer(staticPath))
+	mux.HandleFunc("/healthz", ReadinessEndpoint)
+	staticPath := http.Dir("./")
+	mux.Handle("/app/", http.StripPrefix("/app/", http.FileServer(staticPath)))
 
 	err := server.ListenAndServe()
 	if err != nil {
