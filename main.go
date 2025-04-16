@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/alifoo/webserver-go/internal/database"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 func ReadinessEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +49,50 @@ func ReplaceBadWord(word string) string {
 
 	// return censuredWord.String()
 	return "****"
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+}
+
+func (cfg *apiConfig) CreateUsersEndpoint(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	type parameters struct {
+		Email string `json:"email"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, 400, (`{"error": "Something went wrong"}`))
+		return
+	}
+
+	dbUser, err := cfg.DB.CreateUser(r.Context(), params.Email)
+	if err != nil {
+		respondWithError(w, 400, (`{"error": "Something went wrong with user creation"}`))
+		return
+	}
+
+	user := User{
+		ID:        dbUser.ID,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+		Email:     dbUser.Email,
+	}
+
+	data, err := json.Marshal(user)
+	if err != nil {
+		respondWithError(w, 500, `{"error": "Error marshalling JSON"}`)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	w.Write(data)
 }
 
 func ValidateChirpEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +193,7 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", apiCfg.metricsReader)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetMetrics)
 	mux.HandleFunc("POST /api/validate_chirp", ValidateChirpEndpoint)
+	mux.HandleFunc("POST /api/users", apiCfg.CreateUsersEndpoint)
 
 	fmt.Println("Server up and running!")
 	err = server.ListenAndServe()
