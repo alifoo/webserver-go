@@ -58,6 +58,25 @@ type User struct {
 	Email     string    `json:"email"`
 }
 
+func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
+	if cfg.PLATFORM != "dev" {
+		respondWithError(w, 403, (`{"error": "Platform is not dev."}`))
+		return
+	}
+
+	err := cfg.DB.DeleteAllUsers(r.Context())
+	if err != nil {
+		respondWithError(w, 400, (`{"error": "Something went wrong with deleting all users"}`))
+		return
+	}
+
+	cfg.fileserverHits.Store(0)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Metrics reset to 0"))
+
+}
+
 func (cfg *apiConfig) CreateUsersEndpoint(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
@@ -137,6 +156,7 @@ func ValidateChirpEndpoint(w http.ResponseWriter, r *http.Request) {
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	DB             *database.Queries
+	PLATFORM       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -171,6 +191,7 @@ func main() {
 	godotenv.Load()
 
 	dbURL := os.Getenv("DB_URL")
+	platform := os.Getenv("PLATFORM")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatal(err)
@@ -185,15 +206,16 @@ func main() {
 
 	mux.HandleFunc("GET /api/healthz", ReadinessEndpoint)
 	apiCfg := apiConfig{
-		DB: dbQueries,
+		DB:       dbQueries,
+		PLATFORM: platform,
 	}
 	handler := http.StripPrefix("/app/", http.FileServer(http.Dir("./")))
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(handler))
 	mux.HandleFunc("GET /admin/metrics", apiCfg.metricsReader)
-	mux.HandleFunc("POST /admin/reset", apiCfg.resetMetrics)
 	mux.HandleFunc("POST /api/validate_chirp", ValidateChirpEndpoint)
 	mux.HandleFunc("POST /api/users", apiCfg.CreateUsersEndpoint)
+	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 
 	fmt.Println("Server up and running!")
 	err = server.ListenAndServe()
