@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +13,33 @@ func ReadinessEndpoint(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	w.Write([]byte("OK"))
+
+}
+
+func ValidateChirpEndpoint(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	type parameters struct {
+		Body string `json:"body"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		w.WriteHeader(400)
+		w.Write([]byte(`{"error": "Something went wrong"}`))
+		return
+	}
+
+	if len(params.Body) > 140 {
+		w.WriteHeader(400)
+		w.Write([]byte(`{"error": "Chirp is too long"}`))
+		return
+	}
+
+	w.WriteHeader(200)
+	w.Write([]byte(`{"valid": true}`))
 
 }
 
@@ -61,10 +89,13 @@ func main() {
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(handler))
 	mux.HandleFunc("GET /admin/metrics", apiCfg.metricsReader)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetMetrics)
+	mux.HandleFunc("POST /api/validate_chirp", ValidateChirpEndpoint)
 
+	fmt.Println("Server up and running!")
 	err := server.ListenAndServe()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+
 }
