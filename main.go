@@ -1,10 +1,16 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/alifoo/webserver-go/internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync/atomic"
 )
 
@@ -14,6 +20,33 @@ func ReadinessEndpoint(w http.ResponseWriter, r *http.Request) {
 
 	w.Write([]byte("OK"))
 
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	w.WriteHeader(code)
+	w.Write([]byte(msg))
+}
+
+func IsBadWord(word string) bool {
+	switch word {
+	case
+		"kerfuffle",
+		"sharbert",
+		"fornax":
+		return true
+	}
+	return false
+}
+
+func ReplaceBadWord(word string) string {
+	//var censuredWord bytes.Buffer
+
+	//	for i := 0; i < len(word); i++ {
+	//		censuredWord.WriteString("*")
+	//	}
+
+	// return censuredWord.String()
+	return "****"
 }
 
 func ValidateChirpEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -27,24 +60,37 @@ func ValidateChirpEndpoint(w http.ResponseWriter, r *http.Request) {
 	params := parameters{}
 	err := decoder.Decode(&params)
 	if err != nil {
-		w.WriteHeader(400)
-		w.Write([]byte(`{"error": "Something went wrong"}`))
+		respondWithError(w, 400, (`{"error": "Something went wrong"}`))
 		return
 	}
 
 	if len(params.Body) > 140 {
-		w.WriteHeader(400)
-		w.Write([]byte(`{"error": "Chirp is too long"}`))
+		respondWithError(w, 400, (`{"error": "Chirp is too long"}`))
 		return
 	}
 
+	currentWord := ""
+	words := strings.Split(params.Body, " ")
+	fmt.Println("Words before: ", words)
+
+	for i := range words {
+		currentWord = strings.ToLower(words[i])
+		if IsBadWord(currentWord) {
+			words[i] = ReplaceBadWord(currentWord)
+		}
+	}
+	fmt.Println("Words after: ", words)
+	joinedWords := strings.Join(words, " ")
+
 	w.WriteHeader(200)
-	w.Write([]byte(`{"valid": true}`))
+	jsonString := fmt.Sprintf(`{"cleaned_body": "%s"}`, joinedWords)
+	w.Write([]byte(jsonString))
 
 }
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	DB             *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -76,6 +122,15 @@ func (cfg *apiConfig) resetMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	godotenv.Load()
+
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	dbQueries := database.New(db)
+
 	mux := http.NewServeMux()
 	server := http.Server{
 		Addr:    ":8080",
@@ -83,7 +138,9 @@ func main() {
 	}
 
 	mux.HandleFunc("GET /api/healthz", ReadinessEndpoint)
-	apiCfg := apiConfig{}
+	apiCfg := apiConfig{
+		DB: dbQueries,
+	}
 	handler := http.StripPrefix("/app/", http.FileServer(http.Dir("./")))
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(handler))
@@ -92,7 +149,7 @@ func main() {
 	mux.HandleFunc("POST /api/validate_chirp", ValidateChirpEndpoint)
 
 	fmt.Println("Server up and running!")
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
