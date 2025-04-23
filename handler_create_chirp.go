@@ -76,7 +76,7 @@ func (cfg *apiConfig) handlerChirpsCreate(w http.ResponseWriter, r *http.Request
 
 	chirpJson, err := json.Marshal(response)
 	if err != nil {
-		fmt.Println("Error marshalling chirp!")
+		respondWithError(w, http.StatusInternalServerError, (`{"error": "Error marshalling chirp."}`))
 		return
 	}
 

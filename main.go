@@ -55,6 +55,8 @@ func main() {
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 	mux.HandleFunc("POST /api/chirps", apiCfg.handlerChirpsCreate)
 	mux.HandleFunc("GET /api/chirps", apiCfg.handlerGetAllChirps)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.handlerGetSpecificChirp)
+	mux.HandleFunc("POST /api/login", apiCfg.handlerLogin)
 
 	fmt.Println("Server up and running!")
 	err = server.ListenAndServe()
